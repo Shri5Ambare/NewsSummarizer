@@ -61,7 +61,7 @@ SAMACHAR/
 ```
 
 ## Screenshots
-<img src="/InNews-master/Meta/screenshot.jpg" alt="screenshot" style="max-width:100%;height:auto;">
+<img src="/NewaSummarizer/Meta/screenshot.jpg" alt="screenshot" style="max-width:100%;height:auto;">
 
 
 

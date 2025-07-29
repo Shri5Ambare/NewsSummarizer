@@ -61,7 +61,7 @@ SAMACHAR/
 ```
 
 ## Screenshots
-<img src="/News Summarizer/NewsSummarizer/Meta/screenshot.jpg" alt="screenshot" style="max-width:100%;height:auto;">
+<img src="C:\Users\chand\Downloads\News Summarizer\NewsSummarizer\Meta\screenshot.jpg" alt="screenshot" style="max-width:100%;height:auto;">
 
 
 

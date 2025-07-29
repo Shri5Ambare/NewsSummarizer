@@ -1,153 +1,181 @@
+# samachar_plus.py
 import streamlit as st
+import pandas as pd
 from PIL import Image
 from bs4 import BeautifulSoup as soup
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
+from urllib.parse import quote_plus
+from urllib.error import URLError, HTTPError
 from newspaper import Article
-import io
-import nltk
+from textblob import TextBlob
+import io, time, re
+from functools import wraps
+import json
 
-# Download NLTK resources
-nltk.download('punkt')
+# ---------- CONFIG ----------
+st.set_page_config(
+    page_title="SAMACHAR+ 📰",
+    page_icon="📰",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Set page configuration
-st.set_page_config(page_title='SAMACHAR: A Summarised News 📰 Portal', page_icon='./Meta/newspaper.ico')
-
-
-def fetch_news_search_topic(topic):
-    site = 'https://news.google.com/rss/search?q={}'.format(topic)
-    op = urlopen(site)  # Open that site
-    rd = op.read()  # read data from site
-    op.close()  # close the object
-    sp_page = soup(rd, 'xml')  # scrapping data from site
-    news_list = sp_page.find_all('item')  # finding news
-    return news_list
-
-
-def fetch_top_news():
-    site = 'https://news.google.com/news/rss'
-    op = urlopen(site)  # Open that site
-    rd = op.read()  # read data from site
-    op.close()  # close the object
-    sp_page = soup(rd, 'xml')  # scrapping data from site
-    news_list = sp_page.find_all('item')  # finding news
-    return news_list
-
-
-def fetch_category_news(topic):
-    site = 'https://news.google.com/news/rss/headlines/section/topic/{}'.format(topic)
-    op = urlopen(site)  # Open that site
-    rd = op.read()  # read data from site
-    op.close()  # close the object
-    sp_page = soup(rd, 'xml')  # scrapping data from site
-    news_list = sp_page.find_all('item')  # finding news
-    return news_list
-
-
-def fetch_news_poster(poster_link):
-    try:
-        u = urlopen(poster_link)
-        raw_data = u.read()
-        image = Image.open(io.BytesIO(raw_data))
-        st.image(image, use_column_width=True)
-    except Exception as e:
-        st.warning(f"Failed to load image: {e}")
-        # Use a default image if loading fails
-        image = Image.open('./Meta/no_image.jpg')
-        st.image(image, use_column_width=True)
-
-
-def display_news(list_of_news, news_quantity):
-    c = 0
-    for news in list_of_news:
-        c += 1
-        st.write('**({}) {}**'.format(c, news.title.text))
-        news_data = Article(news.link.text)
+# ---------- CACHING ----------
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_rss(url: str):
+    """Fetch RSS with retry & 10 s timeout."""
+    req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    for attempt in range(3):
         try:
-            news_data.download()
-            news_data.parse()
-            news_data.nlp()
-        except Exception as e:
-            st.error(f"Error fetching news article: {e}")
-            continue
-        
-        fetch_news_poster(news_data.top_image)
-        
-        with st.expander(news.title.text):
-            st.markdown(
-                '''<h6 style='text-align: justify;'>{}"</h6>'''.format(news_data.summary),
-                unsafe_allow_html=True)
-            st.markdown("[Read more at {}...]({})".format(news.source.text, news.link.text))
-        st.success("Published Date: " + news.pubDate.text)
-        if c >= news_quantity:
-            break
+            with urlopen(req, timeout=10) as resp:
+                return soup(resp.read(), features='xml')
+        except (URLError, HTTPError):
+            time.sleep(1.5)
+    return None
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_top_news():
+    xml = fetch_rss("https://news.google.com/news/rss")
+    return xml.find_all('item') if xml else []
 
-def run():
-    st.title("SAMACHAR: A Summarised News 📰 Portal")
-    
-    # Attempt to open the image, fallback to a default image if not found
-    try:
-        image = Image.open('./Meta/samachar11.png')
-    except FileNotFoundError:
-        st.warning("Image not found: Using default image")
-        image = Image.open('./Meta/default_image.png')  # Provide a path to a default image
-    
-    # Resize the image
-    new_size = (300, 300)  # Adjust the size as needed
-    resized_image = image.resize(new_size)
-    
-    # Center the image
-    col1, col2, col3 = st.columns([1, 3, 1])
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_category_news(cat: str):
+    xml = fetch_rss(f"https://news.google.com/news/rss/headlines/section/topic/{cat.upper()}")
+    return xml.find_all('item') if xml else []
 
-    with col1:
-        st.write("")
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_news_search_topic(topic: str):
+    xml = fetch_rss(f"https://news.google.com/rss/search?q={quote_plus(topic)}")
+    return xml.find_all('item') if xml else []
 
-    with col2:
-        st.image(resized_image, use_column_width=True)
+# ---------- UTILITIES ----------
+def fetch_news_poster(poster_link, width=300):
+    if poster_link and poster_link.startswith('http'):
+        try:
+            img = Image.open(io.BytesIO(urlopen(poster_link, timeout=5).read()))
+            st.image(img, width=width)
+            return
+        except Exception:
+            pass
+    # Fallback
+    st.image("https://via.placeholder.com/300x200?text=No+Image", width=width)
 
-    with col3:
-        st.write("")
-    
-    category = ['--Select--', 'Trending🔥 News', 'Favourite💙 Topics', 'Search🔍 Topic']
-    cat_op = st.selectbox('Select your Category', category)
-    if cat_op == category[0]:
-        st.warning('Please select Type!!')
-    elif cat_op == category[1]:
-        st.subheader("✅ Here is the Trending🔥 news for you")
-        no_of_news = st.slider('Number of News:', min_value=5, max_value=25, step=1)
-        news_list = fetch_top_news()
-        display_news(news_list, no_of_news)
-    elif cat_op == category[2]:
-        av_topics = ['Choose Topic', 'WORLD', 'NATION', 'BUSINESS', 'TECHNOLOGY', 'ENTERTAINMENT', 'SPORTS', 'SCIENCE',
-                     'HEALTH']
-        st.subheader("Choose your favourite Topic")
-        chosen_topic = st.selectbox("Choose your favourite Topic", av_topics)
-        if chosen_topic == av_topics[0]:
-            st.warning("Please Choose the Topic")
-        else:
-            no_of_news = st.slider('Number of News:', min_value=5, max_value=25, step=1)
-            news_list = fetch_category_news(chosen_topic)
-            if news_list:
-                st.subheader("✅ Here are the some {} News for you".format(chosen_topic))
-                display_news(news_list, no_of_news)
-            else:
-                st.error("No News found for {}".format(chosen_topic))
+def highlight(text, kw):
+    if not kw:
+        return text
+    kw = re.escape(kw.strip())
+    return re.sub(f'({kw})', r'**\1**', text, flags=re.IGNORECASE)
 
-    elif cat_op == category[3]:
-        user_topic = st.text_input("Enter your Topic🔍")
-        no_of_news = st.slider('Number of News:', min_value=5, max_value=15, step=1)
+def get_sentiment(text):
+    pol = TextBlob(text).sentiment.polarity
+    if pol > 0.15:
+        return ("🙂 Positive", "green")
+    elif pol < -0.15:
+        return ("☹️ Negative", "red")
+    else:
+        return ("😐 Neutral", "gray")
 
-        if st.button("Search") and user_topic != '':
-            user_topic_pr = user_topic.replace(' ', '')
-            news_list = fetch_news_search_topic(topic=user_topic_pr)
-            if news_list:
-                st.subheader("✅ Here are the some {} News for you".format(user_topic.capitalize()))
-                display_news(news_list, no_of_news)
-            else:
-                st.error("No News found for {}".format(user_topic))
-        else:
-            st.warning("Please write Topic Name to Search🔍")
+def display_news(items, qty, kw=''):
+    rows = []
+    for idx, item in enumerate(items[:qty], 1):
+        title = item.title.text
+        link = item.link.text
+        pub = item.pubDate.text if item.pubDate else "N/A"
+        st.markdown(f"### {idx}. {highlight(title, kw)}")
+        art = Article(link, language='en')
+        try:
+            art.download(); art.parse(); art.nlp()
+            summary = art.summary or art.text[:300] + "..."
+        except:
+            summary = "Summary not available."
+        sentiment, color = get_sentiment(summary)
+        fetch_news_poster(art.top_image)
+        with st.expander("📋 Summary & sentiment"):
+            st.write(highlight(summary, kw))
+            st.markdown(f":{color}[**Sentiment:** {sentiment}]")
+            st.markdown(f"[📖 Read full article]({link})")
+        st.caption(f"Published: {pub}")
+        st.markdown("---")
+        rows.append({"Title": title, "Summary": summary,
+                     "Link": link, "Sentiment": sentiment, "Published": pub})
+    return pd.DataFrame(rows)
 
+# ---------- STREAMLIT UI ----------
+def main():
+    # Sidebar
+    with st.sidebar:
+        st.title("⚙️ Controls")
+        dark = st.checkbox("Dark mode")
+        if dark:
+            st.markdown("""
+            <style>
+            .main {background-color: #111 !important; color: #eee !important;}
+            </style>
+            """, unsafe_allow_html=True)
+        if st.button("🔄 Refresh News"):
+            st.cache_data.clear(); st.rerun()
+
+    # Header / logo
+    c1, c2, c3 = st.columns([1, 3, 1])
+    with c2:
+        st.image("https://via.placeholder.com/220x220?text=SAMACHAR+", width=220)
+    st.title("📰 SAMACHAR+ – Advanced News Portal")
+
+    tabs = st.tabs(["🔥 Trending", "💙 Topics", "🔍 Search", "📊 Export"])
+
+    # ---------- Trending ----------
+    with tabs[0]:
+        n = st.slider("Articles", 5, 25, 10, key="trend")
+        items = fetch_top_news()
+        if items:
+            df = display_news(items, n)
+            if not df.empty:
+                st.download_button("⬇️ CSV", df.to_csv(index=False), "trending.csv")
+                buf = io.BytesIO()
+                df.to_excel(buf, index=False, engine='openpyxl')
+                buf.seek(0)
+                st.download_button("⬇️ Excel", buf, "trending.xlsx")
+
+    # ---------- Topics ----------
+    with tabs[1]:
+        cats = ['WORLD', 'NATION', 'BUSINESS', 'TECHNOLOGY', 'ENTERTAINMENT',
+                'SPORTS', 'SCIENCE', 'HEALTH']
+        cat = st.selectbox("Pick category", cats)
+        n = st.slider("Articles", 5, 25, 10, key="cat")
+        items = fetch_category_news(cat)
+        if items:
+            df = display_news(items, n)
+            if not df.empty:
+                st.download_button(f"⬇️ {cat}.csv", df.to_csv(index=False), f"{cat}.csv")
+                buf = io.BytesIO()
+                df.to_excel(buf, index=False, engine='openpyxl')
+                buf.seek(0)
+                st.download_button(f"⬇️ {cat}.xlsx", buf, f"{cat}.xlsx")
+
+    # ---------- Search ----------
+    with tabs[2]:
+        kw = st.text_input("Enter keyword(s) (comma separated)")
+        n = st.slider("Per keyword", 3, 15, 5, key="search")
+        if st.button("🔍 Search"):
+            for k in map(str.strip, kw.split(",")):
+                if not k:
+                    continue
+                st.subheader(f"Results for **{k}**")
+                items = fetch_news_search_topic(k)
+                if items:
+                    df = display_news(items, n, kw=k)
+                    buf = io.BytesIO()
+                    df.to_excel(buf, index=False, engine='openpyxl')
+                    buf.seek(0)
+                    st.download_button(f"⬇️ {k}.xlsx", buf, f"{k}.xlsx")
+                    st.download_button(f"⬇️ {k}.json", json.dumps(df.to_dict("records"), indent=2),
+                                       f"{k}.json", "application/json")
+                else:
+                    st.warning("No results for " + k)
+
+    # ---------- Export ----------
+    with tabs[3]:
+        st.info("Use the ⬇️ download buttons in each tab.")
 
 if __name__ == "__main__":
-    run()
+    main()

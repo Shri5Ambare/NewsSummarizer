@@ -1,6 +1,6 @@
 # NewsSummarizer
 <p align="center">
-  <img src="C:\Users\chand\Downloads\News Summarizer\NewsSummarizer\Meta\samachar.jpg" alt="screenshot" style="width:300px;height:auto;">
+<img src="Meta/samachar.jpg" alt="screenshot" style="width:300px;height:auto;">
 </p>
 
 

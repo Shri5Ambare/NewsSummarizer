@@ -61,7 +61,7 @@ SAMACHAR/
 ```
 
 ## Screenshots
-<img src="/NewaSummarizer/Meta/screenshot.jpg" alt="NewsSummarizer web application interface showing a list of summarized news articles with headlines, brief descriptions, and thumbnail images; navigation sidebar on the left with categories such as Trending, World, Business, Technology, Entertainment, Sports, Science, and Health; the interface has a clean and modern design with a calm and informative tone; visible text includes news headlines and category labels" style="max-width:100%;height:auto;">
+<img src="/News Summarizer/NewsSummarizer/Meta/screenshot.jpg" alt="screenshot" style="max-width:100%;height:auto;">
 
 
 

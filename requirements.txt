@@ -7,3 +7,5 @@ Pillow
 openpyxl
 requests
 lxml
+cssselect
+nltk
